@@ -20,20 +20,20 @@ accepts a wide range of inputs:
     G12345C              # Same and will error if 12345 is not a G
     12345TA              # What do SNPs TA at 12345 translate to?
     12345:GT>TA          # Same and errors if 12345 is not GT
-    12345 GT TA          # Same, VCF style input without label column
-    ABC 12345 GT TA      # Same, VCF input with label column
+    12345 GT TA          # Same, VCF columns 2, 4, 5
+    ABC 12345 GT TA      # Same, VCF columns 1, 2, 4, 5
 
     ins:12345:atg        # Insertion of atg at 12345
     12344 A AACG         # Same, using VCF idiom for insertion
     a12345aacg           # Same, different notation
     nt:a12345aacg        # Same, different notation
     ABC 12344 A AACG     # VCF with label column 1
-    ABC 12344 AG AACGG   # Same, extended VCF idiom (G matches right)
+    ABC 12344 AG AACGG   # Same, extended VCF idiom (end + start)
 
     del:12345:3          # Deletion of 3nt at 12345
     del:12345:gtg        # Same and will error if 12345 is not GTG
     12345:3-             # Same
-    12344 agtg a         # Same, using VCF idiom
+    12344 agtg a         # Same, using VCF idiom for deletion
 
 Inverse, translating back from AA to nt:
 
