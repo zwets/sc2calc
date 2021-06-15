@@ -104,6 +104,8 @@ while [[ $# -gt 0 && "$1" =~ ^-.*$ ]]; do
     shift
 done
 
+(( ! $# )) || usage_exit
+
 ### PARSE INPUT LINE ------------------------------------------------------------------------------
 #
 # Implementation Notes
@@ -349,30 +351,26 @@ while parse_line; do
         # Check that pos is on region
         (( nt_pos >= 0 )) && (( nt_pos < end_pos[$aa_cds] )) || err_exit "out of range aa on $aa_cds: $((aa_pos+1))"
 
-        # Get the codon and aa, and check if given
-        cod="${gen_tgt:$nt_pos:3}"
-        debug "cod = $cod"
-
-        aa="${cod_aa[$cod]}"
-        debug "aa = $aa"
-
-        [ -z "$aa_ref" ] || [ "$aa" = "$aa_ref" ] || err_exit "aa at $((aa_pos+1)) is: ${aa^}"
-        aa_ref="$aa"
-        debug "ref = $ref"
+        # Get and check the reference nucleotides
+        nts="${gen_tgt:$nt_pos:3*ref_len}"
+        aas="$(translate "$nts")"
+        debug "nts = $nts; aas = $aas"
+        [[ -z "$aa_ref" ]] || [[ "$aas" == "$aa_ref" ]] || err_exit "amino acids at $((aa_pos+1)) are: $aas"
+        aa_ref="$aas"
 
         # Show the output
-        printf '%s:%s%d%s\tnt:%d:%s' "$aa_cds" "$aa_ref" $((aa_pos+1)) "$aa_alt" $((nt_pos+1)) "$cod"
-        [ ! "$aa_alt" ] || { sep=''; printf '>';
-            for c in "${!cod_aa[@]}"; do [ "${cod_aa[$c]}" != "$aa_alt" ] || { printf "$sep$c"; sep='|'; }; done
-        }
+        [ -z "$label" ] || printf '%s\t' "$label"
+        printf '%s:%s\tnt:%d:%s>' "$aa_cds" "$(dash_pad "$aa_ref" $((aa_pos+1)) "$aa_alt")" $((nt_pos+1)) "$nts"
+        let i=-1; while (( ++i < alt_len )); do
+            printf '('; sep='';
+            for cod in "${!cod_aa[@]}"; do [ "${cod_aa[$cod]}" != "${aa_alt:i:1}" ] || { printf "$sep$cod"; sep='|'; }; done
+            printf ')'
+        done
 
         printf '\n'
     fi
 done
 
 exit 0
-
-### ARCHIVE DATA -----------------------------------------------------------------------------------
-
 
 # vim: sts=4:sw=4:et:ai:si
