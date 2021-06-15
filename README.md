@@ -1,11 +1,11 @@
 # sc2calc - SARS-CoV-2 genome coordinate converter
 
-`sc2calc` is a small command-line utility to convert genomic coordinates
-on the SARS-CoV-2 genome between nucleotide and aa positions.  It takes a
-nucleotide position or mutation and outputs the corresponding amino acid
-position/substitution, and vice versa.
+`sc2calc` is a command-line utility to convert genomic coordinates on the
+SARS-CoV-2 genome between nucleotide and aa positions.  It takes a nucleotide
+mutation and outputs the corresponding amino acid substitution.
 
-I mainly wrote this for my own use, but it might be helpful for others.
+I mainly wrote this for my own use, but put it out here in case it is of
+use to others.
 
 
 ## Usage

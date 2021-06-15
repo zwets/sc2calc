@@ -1,16 +1,22 @@
 #!/bin/bash
 #
-# sc2calc - genome position converter for SARS-CoV-2
+#  sc2calc - SARS-CoV-2 genomic coordinate converter
+#  Copyright (C) 2021  Marco van Zwetselaar <io@zwets.it>
 #
-# Reads from stdin either genome (nt) or gene (gene:aa) positions or mutations,
-# in a variety of notations.  Outputs the input follow by tab-separated columns
-# giving its nt<->aa conversion in a number of formats.
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
 #
-# Implementation Notes
-#  - all positions internally are C-like: 0-based open ranges: (b,e]
-#  - aa and genomic regions are upper case, nucleotides are lower case
-#  - we parse all known CDS & product names but output only the accepted ones
-#  - special handling for orf1ab and nsp12 due to the -1 slippage at 13467
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#  Home: https://github.com/zwets/sc2calc
 
 BASE_DIR="$(dirname "$0")"
 export LC_ALL="C"
@@ -66,19 +72,31 @@ err_msg() { echo "$(basename "$0"): $*" >&2; }
 
 err_exit() { err_msg $*; exit 1; }
 
-emit() { [ ! $VERBOSE ] || echo "$(basename "$0"): $*" >&2; }
+debug() { [ ! $DEBUG ] || echo "$(basename "$0"): $*" >&2; }
 
-usage_exit() { printf 'Usage: %s OPTIONS [QUERY ...]
-    ' "$(basename "$0")" &&
+usage_exit() {
+    printf '
+Usage: %s [OPTIONS]
+
+  Converts between nucleotide and amino acid coordinates on the SARS-CoV-2
+  genome.  Reads from stdin, writes to stdout.
+
+  OPTIONS
+   -d,--debug  Outputs debug info to stderr
+   -h,--help   Shows this information and exits
+
+  Accepts input in a variety of formats.  See the README or just try it out.
+  To read args from the cmdline instead of stdin use <<< args (in bash).
+
+' "$(basename "$0")" &&
     exit ${1:-1}
 }
 
 ### PARSE ARGS ------------------------------------------------------------------------------------
 
-unset VERBOSE DEBUG
+unset DEBUG
 while [[ $# -gt 0 && "$1" =~ ^-.*$ ]]; do
     case $1 in
-        -v|--verbose) VERBOSE=1 ;;
         -d|--debug)   DEBUG=1 ;;
         -h|--help)    usage_exit 0 ;;
         *) usage_exit ;;
@@ -88,7 +106,11 @@ done
 
 ### PARSE INPUT LINE ------------------------------------------------------------------------------
 #
-# We DWIM by tolerating many input syntaxes, bit messy
+# Implementation Notes
+#  - all positions internally are C-like: 0-based open ranges: (b,e]
+#  - aa and genomic regions are upper case, nucleotides are lower case
+#  - we parse all known CDS & product names but output only the accepted ones
+#  - special handling for orf1ab and nsp12 due to the -1 slippage at 13467
 
 parse_line() {
     declare -a args
@@ -104,7 +126,7 @@ parse_line() {
 
     1|2)
         a="${args[-1]}"
-        emit "a = $a"
+        debug "a = $a"
         case "$a" in
 
         # [nt:]del:12345:acg
@@ -165,6 +187,8 @@ parse_line() {
         return 1 ;;
 
     esac
+
+    [ -z "$DEBUG" ] || declare -p label nt_pos aa_pos ref_len nt_ref nt_alt aa_cds aa_ref aa_alt
 }
 
 # splice_insert generalises the VCF convention for declaring an insert to
@@ -172,8 +196,8 @@ parse_line() {
 # Takes ref and alt as $1 and $2, echoes the offset to stdout.
 splice_insert() {
     let n=${#1} i=n
-    [ "$1" == "${2:0:n}" ] || while (( --i >= 0 )); do
-	[[ "${1:0:i}" == "${2:0:i}" && "${1:i-n}" == "${2:i-n}" ]] && break || let --i
+    [[ "$1" == "${2:0:n}" ]] || while (( --i >= 0 )); do
+	[[ "${1:0:i}" == "${2:0:i}" && "${1:i-n}" == "${2:i-n}" ]] && break
     done
     echo $i
 }
@@ -185,16 +209,11 @@ dashes() { let d=$2-$1; while ((d-- > 0)); do printf -- '-'; done; }
 dash_pad() { printf '%s%s%s%s%s' "$1" "$(dashes ${#1} ${#3})" "$2" "$3" "$(dashes ${#3} ${#1})"; }
 
 # Translate $1 from nt to aa, must be integer number of codons
-translate() { emit "translate '$1'"; let j=0; while ((j < ${#1})); do printf "${cod_aa[${1:$j:3}]}"; let j+=3; done; }
+translate() { debug "translate '$1'"; let j=0; while ((j < ${#1})); do printf "${cod_aa[${1:$j:3}]}"; let j+=3; done; }
 
 ### PROCESS DATA ----------------------------------------------------------------------------------
 
-# Either read from stdin or read the catted args
 while parse_line; do
-
-    # to debug
-    #declare -p label nt_pos aa_pos ref_len nt_ref nt_alt aa_cds aa_ref aa_alt
-    #continue
 
     if (( nt_pos )); then
 
@@ -204,13 +223,13 @@ while parse_line; do
 
         # Determine inc_len
         let inc_len=alt_len-ref_len
-        emit "ref_len = $ref_len; alt_len = $alt_len; inc_len = $inc_len"
+        debug "ref_len = $ref_len; alt_len = $alt_len; inc_len = $inc_len"
 
         # Look up actual reference at pos
         nts="${genome:$nt_pos:$ref_len}"
         [ -z "$nt_ref" ] && nt_ref="$nts" || [ "$nts" = "$nt_ref" ] ||
             err_exit "reference (${nt_ref}) mismatch with genome: ${nts}"
-        emit "nt_ref = $nt_ref"
+        debug "nt_ref = $nt_ref"
 
         # Convert ins to have ref_len=0 and del to have alt_len=0, or error out
         if (( inc_len > 0 )); then
@@ -253,7 +272,7 @@ while parse_line; do
 
             # Get positions on this prd
             let s_nt="nt_pos - beg" e_nt_ref="s_nt + ref_len" e_nt_alt="s_nt + alt_len"
-            emit "s_nt = $s_nt; e_nt_ref = $e_nt_ref; e_nt_alt = $e_nt_alt"
+            debug "s_nt = $s_nt; e_nt_ref = $e_nt_ref; e_nt_alt = $e_nt_alt"
 
             # Skip to next if the mutation doesn't affect this prd at all
             (( e_nt_ref >= 0 && nt_pos < end )) || continue
@@ -265,12 +284,12 @@ while parse_line; do
             # Deal with overruns at the right
             (( e_nt_ref <= e_nt )) || let e_nt_ref=e_nt  # trim mutate or delete to end
             (( e_nt_alt <= e_nt || inc_len > 0)) || let e_nt_alt=e_nt  # trim mutation to end
-            emit "s_nt = $s_nt; e_nt_ref = $e_nt_ref; e_nt_alt = $e_nt_alt"
+            debug "s_nt = $s_nt; e_nt_ref = $e_nt_ref; e_nt_alt = $e_nt_alt"
 
             # Collect nt_col 
             nt_col+="${nt_col:+ }nt:$cds_name:$((s_nt+1)):"
             nt_col+="$(dash_pad "${genome:$((beg+s_nt)):$((e_nt_ref-s_nt))}" '>' "${mutant:$((beg+s_nt)):$((e_nt_alt-s_nt))}")"
-            emit "nt_col = $nt_col"
+            debug "nt_col = $nt_col"
 
             # Skip 5' and 3' hits and correct the pos for the slippage
             case $prd in
@@ -284,20 +303,16 @@ while parse_line; do
             *)
                 declare -n ref_tgt=genome alt_tgt=mutant ;;
             esac
-            emit "s_nt' = $s_nt; e_nt_ref' = $e_nt_ref; e_nt_alt' = $e_nt_alt"
+            debug "s_nt' = $s_nt; e_nt_ref' = $e_nt_ref; e_nt_alt' = $e_nt_alt"
 
             # Collect the aa_ref and aa_alt
             let s_aa="s_nt/3"
             let e_aa="((e_nt_ref > s_nt)) ? 1+(e_nt_ref-1)/3 : s_aa"
             aa_ref="$(translate "${ref_tgt:$((beg+3*s_aa)):$((3*(e_aa-s_aa)))}")"
-            emit "aa_ref = $aa_ref"
+            debug "aa_ref = $aa_ref"
             let e_aa="((e_nt_alt > s_nt)) ? 1+(e_nt_alt-1)/3 : s_aa"
             aa_alt="$(translate "${alt_tgt:$((beg+3*s_aa)):$((3*(e_aa-s_aa)))}")"
-            emit "aa_alt = $aa_alt"
-
-            # Add warning when frameshift
-            let fs="inc_len % 3"
-            (( fs )) && fs="(!!! frameshift $fs !!!)" || unset fs
+            debug "aa_alt = $aa_alt"
 
             # Append the final result
             [ "$aa_ref" = "$aa_alt" ] || 
@@ -308,8 +323,12 @@ while parse_line; do
         # Print the NT column
         printf "${nt_col:-"nt:UTR:$((nt_pos+1))"}\t"
 
+        # Add warning when frameshift
+        let fs="inc_len % 3"
+        (( fs )) && fs="!frameshift:$fs" || unset fs
+
         # Print the AA column
-        printf -- "${aa_col:--}\n"
+        printf -- "${aa_col:--}${fs:+ }${fs}\n"
 
     elif (( aa_pos )); then
 
@@ -325,21 +344,21 @@ while parse_line; do
         case $aa_cds in ORF1AB|NSP12)
             (( nt_pos <= slip_pos )) && declare -n gen_tgt=slip_genome || let --nt_pos ;;
         esac
-        emit "nt_pos = $nt_pos"
+        debug "nt_pos = $nt_pos"
 
         # Check that pos is on region
         (( nt_pos >= 0 )) && (( nt_pos < end_pos[$aa_cds] )) || err_exit "out of range aa on $aa_cds: $((aa_pos+1))"
 
         # Get the codon and aa, and check if given
         cod="${gen_tgt:$nt_pos:3}"
-        emit "cod = $cod"
+        debug "cod = $cod"
 
         aa="${cod_aa[$cod]}"
-        emit "aa = $aa"
+        debug "aa = $aa"
 
         [ -z "$aa_ref" ] || [ "$aa" = "$aa_ref" ] || err_exit "aa at $((aa_pos+1)) is: ${aa^}"
         aa_ref="$aa"
-        emit "ref = $ref"
+        debug "ref = $ref"
 
         # Show the output
         printf '%s:%s%d%s\tnt:%d:%s' "$aa_cds" "$aa_ref" $((aa_pos+1)) "$aa_alt" $((nt_pos+1)) "$cod"
