@@ -167,12 +167,8 @@ parse_line() {
     esac
 }
 
-
-# splice_insert generalises the VCF convention for declaring an insert by
-# having a single base in the ref that matches the first base of the longer
-# seq in the alt, by allowing any number of bases in the ref, and allowing
-# matches at either head or tail of alt.
-# E.g.: splice_insert acgt acFOOgt gives +2, as this inserts FOO at +2.
+# splice_insert generalises the VCF convention for declaring an insert to
+# having any number of bases in the ref covering arbitrary ends of the alt.
 # Takes ref and alt as $1 and $2, echoes the offset to stdout.
 splice_insert() {
     let n=${#1} i=n
@@ -185,11 +181,11 @@ splice_insert() {
 # Produce a string of $2-$1 dashes
 dashes() { let d=$2-$1; while ((d-- > 0)); do printf -- '-'; done; }
 
-# Takes strings $1 and $3 and separator $2, and returns "$1$2$3" with shortest dash-padded
+# Takes strings $1 and $3 and separator $2, and returns "$1$2$3" with dash-padded $1 or $2
 dash_pad() { printf '%s%s%s%s%s' "$1" "$(dashes ${#1} ${#3})" "$2" "$3" "$(dashes ${#3} ${#1})"; }
 
-# Translate $1 from nt to aa
-translate() { emit "translate '$1'"; let j=0; while ((j < ${#1})); do printf ${cod_aa[${1:$j:3}]}; let j+=3; done; }
+# Translate $1 from nt to aa, must be integer number of codons
+translate() { emit "translate '$1'"; let j=0; while ((j < ${#1})); do printf "${cod_aa[${1:$j:3}]}"; let j+=3; done; }
 
 ### PROCESS DATA ----------------------------------------------------------------------------------
 
@@ -216,7 +212,7 @@ while parse_line; do
             err_exit "reference (${nt_ref}) mismatch with genome: ${nts}"
         emit "nt_ref = $nt_ref"
 
-        # Convert ins to have ref_len=0 and del to have alt_len=0
+        # Convert ins to have ref_len=0 and del to have alt_len=0, or error out
         if (( inc_len > 0 )); then
             let ofs=$(splice_insert "$nt_ref" "$nt_alt")
             (( ofs != -1 )) || err_exit "cannot handle mutated insertion: ${nt_ref}>${nt_alt}"
@@ -225,7 +221,7 @@ while parse_line; do
         elif (( inc_len < 0 )); then
             let ofs=$(splice_insert "$nt_alt" "$nt_ref")
             (( ofs != -1 )) || err_exit "cannot handle mutated deletion: ${nt_ref}>${nt_alt}"
-            nt_ref="${nt_ref:$ofs:-$inc_len}"; let nt_pos+=ofs ref_len=-inc_len alt_len=0
+            nt_alt="" nt_ref="${nt_ref:$ofs:-$inc_len}"; let nt_pos+=ofs ref_len=-inc_len alt_len=0
             change="del:$((nt_pos+1)):${nt_ref}"
         elif [[ "$nt_ref" != "$nt_alt" ]]; then
             change="mut:$((nt_pos+1)):${nt_ref}>${nt_alt}"
@@ -249,9 +245,8 @@ while parse_line; do
         for i in "${!reg_ord[@]}"; do
 
             # Note we know at this point that nt_ref != nt_alt and
-            # !ref_len => alt_len (ins)
-            # !alt_len => ref_len (del)
-            # else => ref_len == alt_len && ref_len && alt_len (mut)
+            # !ref_len => alt_len (ins) and !alt_len => ref_len (del)
+            # else => ref_len == alt_len && both not 0 (mut)
 
             prd="${reg_ord[$i]}" cds_name="${reg_name[$i]}"
             let beg=${beg_pos[$prd]} end=${end_pos[$prd]} e_nt=end-beg
@@ -277,8 +272,10 @@ while parse_line; do
             nt_col+="$(dash_pad "${genome:$((beg+s_nt)):$((e_nt_ref-s_nt))}" '>' "${mutant:$((beg+s_nt)):$((e_nt_alt-s_nt))}")"
             emit "nt_col = $nt_col"
 
-            # Correct the pos for the slippage, so we can translate to aa
+            # Skip 5' and 3' hits and correct the pos for the slippage
             case $prd in
+            5UTR|3UTR)
+                continue ;;
             ORF1AB|NSP12)
                 ((beg + s_nt <= slip_pos)) || ((++s_nt))
                 ((beg + e_nt_ref < slip_pos)) || ((++e_nt_ref))
@@ -289,15 +286,12 @@ while parse_line; do
             esac
             emit "s_nt' = $s_nt; e_nt_ref' = $e_nt_ref; e_nt_alt' = $e_nt_alt"
 
-            # Collect aa_col
-            case $prd in 5UTR|3UTR) continue ;; esac
-
             # Collect the aa_ref and aa_alt
             let s_aa="s_nt/3"
-            let e_aa="((e_nt_ref > s_nt)) ? ((e_nt_ref-1)/3+1) : s_aa"
+            let e_aa="((e_nt_ref > s_nt)) ? 1+(e_nt_ref-1)/3 : s_aa"
             aa_ref="$(translate "${ref_tgt:$((beg+3*s_aa)):$((3*(e_aa-s_aa)))}")"
             emit "aa_ref = $aa_ref"
-            let e_aa="((e_nt_alt > s_nt)) ? ((e_nt_alt-1)/3+1) : s_aa"
+            let e_aa="((e_nt_alt > s_nt)) ? 1+(e_nt_alt-1)/3 : s_aa"
             aa_alt="$(translate "${alt_tgt:$((beg+3*s_aa)):$((3*(e_aa-s_aa)))}")"
             emit "aa_alt = $aa_alt"
 
@@ -317,28 +311,24 @@ while parse_line; do
         # Print the AA column
         printf -- "${aa_col:--}\n"
 
-    elif [[ "$INPUT" =~ ^[[:alnum:]]+:[[:alpha:]]?[[:digit:]]+[[:alpha:]]?$ ]]; then
-        declare -u prd=$(expr "$INPUT" : '\(.*\):') 
-        declare -u ref=$(expr "$INPUT" : '.*:\([[:alpha:]]\)')
-        declare -i pos=$(expr "$INPUT" : '.*:[[:alpha:]]\?\([[:digit:]]\+\)')
-        declare -u alt=$(expr "$INPUT" : '.*:[[:alpha:]]\?[[:digit:]]\+\([[:alpha:]]\)')
+    elif (( aa_pos )); then
 
-        let --pos
-        [ ${beg_pos[$prd]} ] || err_exit "unknown region: $prd"
+        let --aa_pos
+        [ ${beg_pos[$aa_cds]} ] || err_exit "unknown CDS: $aa_cds"
 
         # Get the nt position
-        let beg=${beg_pos[$prd]}
-        let nt_pos="beg + 3*pos"
+        let beg=${beg_pos[$aa_cds]}
+        let nt_pos="beg + 3*aa_pos"
 
         # Fiddle the slippage
         declare -n gen_tgt=genome
-        case $prd in ORF1AB|NSP12)
+        case $aa_cds in ORF1AB|NSP12)
             (( nt_pos <= slip_pos )) && declare -n gen_tgt=slip_genome || let --nt_pos ;;
         esac
         emit "nt_pos = $nt_pos"
 
         # Check that pos is on region
-        (( nt_pos >= 0 )) && (( nt_pos < end_pos[$prd] )) || err_exit "out of range aa on $prd: $((pos+1))"
+        (( nt_pos >= 0 )) && (( nt_pos < end_pos[$aa_cds] )) || err_exit "out of range aa on $aa_cds: $((aa_pos+1))"
 
         # Get the codon and aa, and check if given
         cod="${gen_tgt:$nt_pos:3}"
@@ -347,19 +337,17 @@ while parse_line; do
         aa="${cod_aa[$cod]}"
         emit "aa = $aa"
 
-        [ -z "$ref" ] || [ "$aa" = "$ref" ] || err_exit "aa at $((pos+1)) is: ${aa^}"
-        ref="$aa"
+        [ -z "$aa_ref" ] || [ "$aa" = "$aa_ref" ] || err_exit "aa at $((aa_pos+1)) is: ${aa^}"
+        aa_ref="$aa"
         emit "ref = $ref"
 
         # Show the output
-        printf '%s\t%s:%s%d%s\tnt:%d:%s' "$INPUT" "$prd" "$ref" $((pos+1)) "$alt" $((nt_pos+1)) "$cod"
-        [ ! $alt ] || { sep=''; printf '>';
-            for c in "${!cod_aa[@]}"; do [ "${cod_aa[$c]}" != "$alt" ] || { printf "$sep$c"; sep='|'; }; done
+        printf '%s:%s%d%s\tnt:%d:%s' "$aa_cds" "$aa_ref" $((aa_pos+1)) "$aa_alt" $((nt_pos+1)) "$cod"
+        [ ! "$aa_alt" ] || { sep=''; printf '>';
+            for c in "${!cod_aa[@]}"; do [ "${cod_aa[$c]}" != "$aa_alt" ] || { printf "$sep$c"; sep='|'; }; done
         }
 
         printf '\n'
-    else
-        err_exit "unknown reference: $INPUT"
     fi
 done
 
