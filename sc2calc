@@ -326,11 +326,10 @@ while parse_line; do
         printf "${nt_col:-"nt:UTR:$((nt_pos+1))"}\t"
 
         # Add warning when frameshift
-        let fs="inc_len % 3"
-        (( fs )) && fs="!frameshift:$fs" || unset fs
+        (( inc_len % 3 )) && fs_warn="!frameshift:$((-inc_len%3))" || unset fs_warn
 
         # Print the AA column
-        printf -- "${aa_col:--}${fs:+ }${fs}\n"
+        printf -- "${aa_col:--}${fs_warn:+ }${fs_warn}\n"
 
     elif (( aa_pos )); then
 
