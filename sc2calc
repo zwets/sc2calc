@@ -238,12 +238,12 @@ while parse_line; do
             let ofs=$(splice_insert "$nt_ref" "$nt_alt")
             (( ofs != -1 )) || err_exit "cannot handle mutated insertion: ${nt_ref}>${nt_alt}"
             nt_ref="" nt_alt="${nt_alt:$ofs:$inc_len}"; nt_pos+=ofs alt_len=inc_len ref_len=0
-            change="ins:$((nt_pos+1)):${nt_alt}"
+            change="ins:$((nt_pos+1)):${#nt_alt}"
         elif (( inc_len < 0 )); then
             let ofs=$(splice_insert "$nt_alt" "$nt_ref")
             (( ofs != -1 )) || err_exit "cannot handle mutated deletion: ${nt_ref}>${nt_alt}"
             nt_alt="" nt_ref="${nt_ref:$ofs:-$inc_len}"; let nt_pos+=ofs ref_len=-inc_len alt_len=0
-            change="del:$((nt_pos+1)):${nt_ref}"
+            change="del:$((nt_pos+1)):${#nt_ref}"
         elif [[ "$nt_ref" != "$nt_alt" ]]; then
             change="mut:$((nt_pos+1)):${nt_ref}>${nt_alt}"
         else
