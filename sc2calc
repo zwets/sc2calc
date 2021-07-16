@@ -109,7 +109,7 @@ done
 ### PARSE INPUT LINE ------------------------------------------------------------------------------
 #
 # Implementation Notes
-#  - all positions internally are C-like: 0-based open ranges: (b,e]
+#  - all positions internally are C-like 0-based open ranges: [b,e)
 #  - aa and genomic regions are upper case, nucleotides are lower case
 #  - we parse all known CDS & product names but output only the accepted ones
 #  - special handling for orf1ab and nsp12 due to the -1 slippage at 13467
