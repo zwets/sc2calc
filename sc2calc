@@ -153,7 +153,7 @@ parse_line() {
                                     aa_pos=${r/%:*} aa_alt=${r/#*:} alt_len=${#aa_alt} ;;
 
         # [nt:]12345:acg>att..
-        ?(nt:)$POS:$NTS\>$NTS)      r=${a/#nt:}                               
+        ?(nt:)$POS:$NTS\>$NTS)      r=${a/#nt:}
                                     nt_pos=${r/%:*} r=${r/#*:} nt_ref=${r/%>*} nt_alt=${a/#*>} ref_len=${#nt_ref} alt_len=${#nt_alt} ;;
         # [aa:]S:345:KL>MN..
         ?(aa:)$CDS:$POS:$AAS\>$AAS) r=${a/#aa:} aa_cds=${r/%:*} r=${r/#$CDS:}
@@ -199,7 +199,7 @@ parse_line() {
 splice_insert() {
     let n=${#1} i=n
     [[ "$1" == "${2:0:n}" ]] || while (( --i >= 0 )); do
-	[[ "${1:0:i}" == "${2:0:i}" && "${1:i-n}" == "${2:i-n}" ]] && break
+        [[ "${1:0:i}" == "${2:0:i}" && "${1:i-n}" == "${2:i-n}" ]] && break
     done
     echo $i
 }
@@ -281,14 +281,14 @@ while parse_line; do
 
             # Deal with overruns from the left
             (( s_nt >= 0 )) || let s_nt=0
-            (( e_nt_alt >= 0 )) || let e_nt_alt=0 
+            (( e_nt_alt >= 0 )) || let e_nt_alt=0
 
             # Deal with overruns at the right
             (( e_nt_ref <= e_nt )) || let e_nt_ref=e_nt  # trim mutate or delete to end
             (( e_nt_alt <= e_nt || inc_len > 0)) || let e_nt_alt=e_nt  # trim mutation to end
             debug "s_nt = $s_nt; e_nt_ref = $e_nt_ref; e_nt_alt = $e_nt_alt"
 
-            # Collect nt_col 
+            # Collect nt_col
             nt_col+="${nt_col:+ }nt:$cds_name:$((s_nt+1)):"
             nt_col+="$(dash_pad "${genome:$((beg+s_nt)):$((e_nt_ref-s_nt))}" '>' "${mutant:$((beg+s_nt)):$((e_nt_alt-s_nt))}")"
             debug "nt_col = $nt_col"
@@ -317,7 +317,7 @@ while parse_line; do
             debug "s_aa = $s_aa; e_aa = $e_aa; aa_alt = $aa_alt"
 
             # Append the final result
-            [ "$aa_ref" = "$aa_alt" ] || 
+            [ "$aa_ref" = "$aa_alt" ] ||
             aa_col+="${aa_col:+ }$cds_name:$(dash_pad "$aa_ref" $((s_aa+1)) "${aa_alt}")${fs:+ $fs}"
 
         done
